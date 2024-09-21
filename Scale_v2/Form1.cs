@@ -640,6 +640,7 @@ namespace Scale_v2
 					}
 				}
 				file = Download(radioBtn);
+
 				if (file.Length > 0)
 				{
 					foreach (string sd in scale)
@@ -649,6 +650,7 @@ namespace Scale_v2
 						logs($"The data from {radioBtn} are successfully transfered on {sd}.");
 					}
 				}
+				// comment
 			}
 
 		}
