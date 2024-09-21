@@ -650,7 +650,6 @@ namespace Scale_v2
 						logs($"The data from {radioBtn} are successfully transfered on {sd}.");
 					}
 				}
-				// comment
 			}
 
 		}
