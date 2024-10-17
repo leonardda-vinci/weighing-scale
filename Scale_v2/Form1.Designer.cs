@@ -261,7 +261,7 @@
 			this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
 			this.Name = "Form1";
 			this.ShowInTaskbar = false;
-			this.Text = "Scale";
+			this.Text = "Weighing Scale";
 			this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Form1_FormClosing);
 			this.Shown += new System.EventHandler(this.Form1_Shown);
 			this.Resize += new System.EventHandler(this.Form1_Resize);

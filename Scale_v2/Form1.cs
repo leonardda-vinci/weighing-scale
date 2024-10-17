@@ -20,25 +20,37 @@ using System.Runtime.InteropServices;
 using System.Net;
 using System.Xml.Linq;
 using static System.Windows.Forms.LinkLabel;
+using System.Security.Policy;
 
 namespace Scale_v2
 {
 	public partial class Form1 : Form
 	{
+		string[] devices;
+		string sourceDir;
+		string downloadDir;
+		string extractDir;
+		string aclasApp;
+		string inDir;
+
 		int loop = 1;
 		int fiveM;
 		private FileSystemWatcher fileWatcher;
 		IniParser iniFile;
 		public Form1()
 		{
+			this.devices = new string[3];
+
 			this.iniFile = new IniParser(@"C:\RCS\Scale\config.ini");
-			string source = this.iniFile.GetSetting("Settings", "Source");
+			this.sourceDir = this.iniFile.GetSetting("Settings", "Source");
+			this.downloadDir = this.iniFile.GetSetting("Target", "DLPath");
+			this.aclasApp = this.iniFile.GetSetting("APP", "EXE");
+			this.extractDir = this.iniFile.GetSetting("Target", "ExtractPath");
+			this.inDir = this.iniFile.GetSetting("Settings", "In");
+
 			Console.WriteLine($"Source = " + this.iniFile.GetSetting("Settings", "Source"));
+
 			InitializeComponent();
-
-			string DLPath = this.iniFile.GetSetting("Target", "DLPath");
-			string ExtractPath = this.iniFile.GetSetting("Target", "ExtractPath");
-
 
 			if (InitClass.CheckApp() == true)
 			{
@@ -49,33 +61,35 @@ namespace Scale_v2
 
 			StartTime();
 			
-			if (!Directory.Exists(DLPath))
+			if (!Directory.Exists(this.downloadDir))
 			{
-				Directory.CreateDirectory(DLPath);
+				Directory.CreateDirectory(this.downloadDir);
 			}
 			
-			if (!Directory.Exists(ExtractPath))
+			if (!Directory.Exists(this.extractDir))
 			{
-				Directory.CreateDirectory(ExtractPath);
+				Directory.CreateDirectory(this.extractDir);
 			}
+
+			this.devices = this.getScaleDevices();
 
 			try
 			{
-				fileWatcher = new FileSystemWatcher(source);
+				fileWatcher = new FileSystemWatcher(this.sourceDir);
 				fileWatcher.NotifyFilter = NotifyFilters.LastWrite;
 				fileWatcher.Changed += OnChanged;
 
 				fileWatcher.Filter = "*bingo";
-				fileWatcher.IncludeSubdirectories = true;
+				// fileWatcher.IncludeSubdirectories = true;
 				fileWatcher.EnableRaisingEvents = true;
 			}
-			 catch (Exception err)
+			catch (Exception err)
 			{
 				MessageBox.Show(err.Message);
 			}
 
 			logTextBox.AppendText("Scale Running...\r\n");
-			FindingBingo(source);
+			FindingBingo(this.sourceDir);
 
 			this.ip1.Checked = Properties.Settings.Default.SD1;
 			this.ip2.Checked = Properties.Settings.Default.SD2;
@@ -102,7 +116,6 @@ namespace Scale_v2
 						logTextBox.Text = "bingo file found!" + "\r\n" + logTextBox.Text;
 					});
 
-					// Thread.Sleep(2000);
 					if (!backgroundWorker1.IsBusy)
 					{
 						backgroundWorker1.RunWorkerAsync();
@@ -114,63 +127,30 @@ namespace Scale_v2
 		private void FindingBingo(string source)
 		{
 			string[] bingoFiles = Directory.GetFiles(source, "*bingo");
-			foreach (string file in bingoFiles)
+			if (bingoFiles.Length > 0)
 			{
-				logs($"{file} found on: {source}");
 				backgroundWorker1.RunWorkerAsync();
 			}
 		}
 
 
-
-		private void clear_Click(object sender, EventArgs e)
+		private string[] getScaleDevices()
 		{
-			string[] ipAddress = new string[3];
-			DialogResult result = MessageBox.Show("Are you sure you want to proceed?", "Warning!", MessageBoxButtons.YesNo);
-			if (result == DialogResult.Yes)
-			{
-				for (int i = 1; i <= 3; i++)
-				{
-					string ip = this.iniFile.GetSetting("Address", "SD" + i.ToString());
-					if (i == 1)
-					{
-						ipAddress[i - 1] = ip;
-					}
-
-					if (i == 2)
-					{
-						ipAddress[i - 1] = ip;
-					}
-
-					if (i == 3)
-					{
-						ipAddress[i - 1] = ip;
-					}
-				}
-			}
-			ClearProcess(ipAddress);
-		}
-
-		private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
-		{
-			string[] ipAddress = new string[3];
-			logs($"Do Work.");
+			startBtn.Enabled = false;
+			string[] devices = new string[3];
 			for (int i = 1; i <= 3; i++)
 			{
 				string ip = this.iniFile.GetSetting("Address", "SD" + i.ToString());
-				// MessageBox.Show(ipAddress);
 				if ((i == 1) && (Properties.Settings.Default.SD1))
 				{
 					if (CheckPing(ip))
 					{
 						logs($"Device {ip} is available!");
-						ipAddress[i - 1] = ip;
-						// ScaleProcess(ipAddress);
+						devices[i - 1] = ip;
 					}
 					else
 					{
 						logs($"Device {ip} is not available!");
-						ipAddress[i - 1] = "";
 					}
 				}
 
@@ -179,13 +159,11 @@ namespace Scale_v2
 					if (CheckPing(ip))
 					{
 						logs($"Device {ip} is available!");
-						ipAddress[i - 1] = ip;
-						// ScaleProcess(ipAddress);
+						devices[i - 1] = ip;
 					}
 					else
 					{
 						logs($"Device {ip} is not available!");
-						ipAddress[i - 1] = "";
 					}
 				}
 
@@ -194,45 +172,50 @@ namespace Scale_v2
 					if (CheckPing(ip))
 					{
 						logs($"Device {ip} is available!");
-						ipAddress[i - 1] = ip;
-						// ScaleProcess(ipAddress);
+						devices[i - 1] = ip;
 					}
 					else
 					{
 						logs($"Device {ip} is not available!");
-						ipAddress[i - 1] = "";
 					}
 				}
 			}
-			ScaleProcess(ipAddress);
+
+			return devices;
 		}
 
-		private void ScaleProcess(string[] ip)
+		private async void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
 		{
+			logs($"Do Work.");
+
 			if (Properties.Settings.Default.Upload)
 			{
-				Upload(ip);
+				Upload(this.devices);
 			}
 
 			if (Properties.Settings.Default.Download)
 			{
-				for (int i = 0; i < ip.Length; i++)
+				for (int i = 0; i < this.devices.Length; i++)
 				{
-					Download(ip[i]);
-					UploadToSMS(ip[i]).Wait();
+					Download(this.devices[i], this.inDir, "txt");
 				}
+
+				using (StreamWriter sw = new StreamWriter(this.inDir + "bingo"))
+				{
+					sw.WriteLine();
+				}
+
+				await this.HTTP(this.iniFile.GetSetting("Address", "Get"));
 			}
-				
 			if (Properties.Settings.Default.Delete)
 			{
-				for (int i = 0; i < ip.Length; i++)
+				for (int i = 0; i < this.devices.Length; i++)
 				{
-					Delete(ip[i]);
+					Delete(this.devices[i]);
 				}
 			}
-
 		}
-
+		
 		private bool CheckPing(string ip)
 		{
 			Ping sender = new Ping();
@@ -251,25 +234,25 @@ namespace Scale_v2
 			}
 		}
 
-		public string Download(string ip)
+		public string Download(string ip, string target, string ext)
 		{
 			DateTime date = DateTime.Today;
 			string current = String.Format("{0:yyyyMMdd}", date);
-			string filepath = this.iniFile.GetSetting("Target", "ExtractPath");
-			string filename = ip + "_PLU_UP_" + current + ".txt";
-			logs(filename);
+			string filename = ip + "_PLU-UP_" + current + "." + ext;
+			if (ext == "iu")
+			{
+				filename = "PLU." + current + "." + ext;
+			}
+			
 			try
 			{
 				logs("Downloading Weighing Scale Data in IP of " + ip);
-				string exe = this.iniFile.GetSetting("APP", "EXE");
-
 				ProcessStartInfo startInfo = new ProcessStartInfo();
 				startInfo.CreateNoWindow = false;
 				startInfo.UseShellExecute = false;
-				startInfo.FileName = exe;
+				startInfo.FileName = this.iniFile.GetSetting("APP", "EXE");
 				startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-				startInfo.Arguments = @"-h " + ip + @":5002 -t UP -b PLU -n " + filepath + filename + " -f Ascii";
-				// logs(@"-h " + ip + @":5002 -t UP -b PLU -n " + filepath + filename + " -f Ascii");
+				startInfo.Arguments = @"-h " + ip + @":5002 -t UP -b PLU -n " + target + filename + " -f Ascii";
 				logs(ip + ": download AclasSDK");
 				using (Process process = Process.Start(startInfo))
 				{
@@ -278,169 +261,171 @@ namespace Scale_v2
 
 				logs($"{filename} successfully created!");
 
+				string from = Path.Combine(target, filename);
+				string to = Path.Combine(this.extractDir, filename);
+				if (File.Exists(to))
+				{
+					File.Delete(to);
+				}
+				File.Copy(from, to);
+				logs($"{filename} successfully copied.");
 			}
 			catch (Exception err)
 			{
 				logs($"Extraction Failed: {err.Message}");
 				// return string.Empty;
 			}
-			return Path.Combine(filepath + filename);
+
+			return Path.Combine(this.extractDir + filename);
 		}
 
 		public void Upload(string[] ip)
 		{
-			string bFile = "bingo";
-			string DLType = "*.iu";
-			string scalepath = this.iniFile.GetSetting("Settings", "Source");
-			string dlpath = this.iniFile.GetSetting("Target", "DLPath");
-			string exe = this.iniFile.GetSetting("APP", "EXE");
-			string bPath = Path.Combine(scalepath, bFile);
-			string dateStr = "2021-05-13 11:59:00.000";
-			DateTime epochTime = DateTime.Parse("1970-01-01");
-			DateTime date = DateTime.Parse(dateStr);
-			var Epoch = date.Subtract(epochTime).TotalSeconds;
-
-			DirectoryInfo dirinfo = new DirectoryInfo(scalepath);
-			FileInfo[] files = dirinfo.GetFiles(DLType);
+			DirectoryInfo dirinfo = new DirectoryInfo(this.sourceDir);
+			FileInfo[] files = dirinfo.GetFiles("*.iu");
 			FileInfo[] sortedFiles = files.OrderBy(f => f.CreationTime).ToArray();
-			string[] getdownloadfile = sortedFiles.Select(f => f.FullName).ToArray();
+			string[] importFile = sortedFiles.Select(f => f.FullName).ToArray();
 
-			if (File.Exists(bPath))
+			if (File.Exists(this.sourceDir + "\\bingo"))
 			{
 				logs("Deleting bingo...");
-				File.Delete(bPath);
+				File.Delete(this.sourceDir + "\\bingo");
 				logs("Bingo has been deleted successfully.");
 			}
 
-			if (getdownloadfile.Length > 0)
+			if (importFile.Length > 0)
 			{
-				try
+				foreach (string ldlFile in importFile)
 				{
+					string name = Path.GetFileName(ldlFile);
+					string[] token = name.Split('.');
 
-					foreach (string ldlFile in getdownloadfile)
+					for (int i = 0; i < ip.Length; i++)
 					{
-						string name = Path.GetFileName(ldlFile);
-						for (int i = 0; i < ip.Length; i++)
+						try
 						{
-							logs(ip[i] + ": Uploading");
+							logs(ip[i] + ": Uploading" + name);
 							// logs("Uploading all Data on " + ip);
 							ProcessStartInfo startInfo = new ProcessStartInfo();
 							startInfo.CreateNoWindow = false;
 							startInfo.UseShellExecute = false;
-							startInfo.FileName = exe;
+							startInfo.FileName = this.aclasApp;
 							startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-
-							if (name.Contains("PLU"))
+							//startInfo.Arguments = @"-h " + ip[i] + @":5002 -t DOWN -b PLU -n " + this.sourceDir + name + " -f Ascii";
+							if (token[0] == "PLU")
 							{
 								logs(ip[i] + ": Processing file " + name);
-								startInfo.Arguments = @"-h " + ip[i] + @":5002 -t DOWN -b PLU -n " + scalepath + name + " -f Ascii";
+								startInfo.Arguments = @"-h " + ip[i] + @":5002 -t DOWN -b PLU -n " + this.sourceDir + name + " -f Ascii";
+							}
+							else
+							{
+								startInfo.Arguments = @"-h " + token[0] + @":5002 -t DOWN -b PLU -n " + this.sourceDir + name + " -f Ascii";
+							}
 
-								logs(ip[i] + ": upload AclasSDK");
-								using (Process process = Process.Start(startInfo))
+							logs(ip[i] + ": upload AclasSDK");
+							using (Process process = Process.Start(startInfo))
+							{
+								if (process != null)
 								{
-									if (process != null)
-									{
-										process.WaitForExit();
-									}
+									process.WaitForExit();
 								}
 							}
 						}
-						string dldest = Path.Combine(dlpath, name);
-						if (File.Exists(dldest))
+						catch (Exception err)
 						{
-							File.Delete(dldest);
+							logs(ip[i] + ": Failed to upload: " + err.Message);
 						}
-						File.Move(ldlFile, dldest);
-						logs("Successfully moved!");
 					}
-				}
-				catch (Exception err)
-				{
-					for (int i = 0; i < ip.Length; i++)
+					string dldest = Path.Combine(this.downloadDir, name);
+					if (File.Exists(dldest))
 					{
-						logs(ip + ": Failed to upload: " + err.Message);
+						File.Delete(dldest);
 					}
+					File.Move(ldlFile, dldest);
+					logs("Successfully moved " + name + " !");
 				}
 			}
 		}
 
-		private async Task UploadToSMS(string ip)
-		{
-			string FileType = "*.txt";
-			DateTime date = DateTime.Today;
-			string current = String.Format("{0:yyyyMMdd}", date);
-			string FilePath = this.iniFile.GetSetting("Target", "ExtractPath");
-			string[] GetFile = Directory.GetFiles(FilePath, FileType);
+		//private void UploadToSMS(string ip)
+		//{
+		//	string FileType = "*.txt";
+		//	DateTime date = DateTime.Today;
+		//	string current = String.Format("{0:yyyyMMdd}", date);
+		//	string[] GetFile = Directory.GetFiles(this.extractDir, FileType);
 
-			foreach (string localFile in GetFile)
-			{
-				string filename = Path.GetFileName(localFile);
-				string FileIdentifier = ip + "_PLU-UP_" + current + ".txt";
-				if (FileIdentifier == filename)
-				{
-					using (var reader = new StreamReader(localFile))
-					{
-						reader.ReadLine();
-						while (!reader.EndOfStream)
-						{
-							string value = reader.ReadLine();
-							string[] spliter = value.Split('\t');
-							string Barcode = spliter[0].ToString();
-							string UnitID = spliter[11].ToString();
-							string Description = spliter[4].ToString();
-							double Price = Convert.ToDouble(spliter[12].ToString()) * 100;
-							await HTTP(ip, Barcode, Description, Price, UnitID);
-						}
-					}
-					logs("Upload of " + ip + " complete");
-				}
-			}
-			string FileName = ip + "_PLU-UP_" + current + ".txt";
-			string destpath = Path.Combine(FilePath, FileName);
-			if (!File.Exists(destpath))
-			{
-				logs("Upload of " + ip + " failed due to missing file.");
-			}
-		}
-
-		private async Task HTTP(string ip, string Barcode, string Description, double Price, string UnitID)
+		//	foreach (string localFile in GetFile)
+		//	{
+		//		string filename = Path.GetFileName(localFile);
+		//		string FileIdentifier = ip + "_PLU-UP_" + current + ".txt";
+		//		if (FileIdentifier == filename)
+		//		{
+		//			using (var reader = new StreamReader(localFile))
+		//			{
+		//				reader.ReadLine();
+		//				while (!reader.EndOfStream)
+		//				{
+		//					string value = reader.ReadLine();
+		//					string[] spliter = value.Split('\t');
+		//					string Barcode = spliter[0].ToString();
+		//					string UnitID = spliter[11].ToString();
+		//					string Description = spliter[4].ToString();
+		//					double Price = Convert.ToDouble(spliter[12].ToString()) * 100;
+		//					// await HTTP(ip, Barcode, Description, Price, UnitID);
+		//				}
+		//			}
+		//			logs("Upload of " + ip + " complete");
+		//		}
+		//	}
+		//	string FileName = ip + "_PLU-UP_" + current + ".txt";
+		//	string destpath = Path.Combine(this.extractDir, FileName);
+		//	if (!File.Exists(destpath))
+		//	{
+		//		logs("Upload of " + ip + " failed due to missing file.");
+		//	}
+		//}
+		
+		private async Task HTTP(string url)
 		{
-			string post = this.iniFile.GetSetting("Address", "Post");
 			try
 			{
 				using (HttpClient client = new HttpClient())
 				{
-					var data = new Dictionary<string, string>
-				{
+					/* var data = new Dictionary<string, string>
 					{
-						"device_id", ip
-					},
-					{
-						"barcode", Barcode
-					},
-					{
-						"description", Description
-					},
-					{
-						"price", Price.ToString()
-					},
-					{
-						"unit_id", UnitID
-					}
-				};
+						{
+							"device_id", ip
+						},
+						{
+							"barcode", Barcode
+						},
+						{
+							"description", Description
+						},
+						{
+							"price", Price.ToString()
+						},
+						{
+							"unit_id", UnitID
+						}
+					};
 
 					var content = new FormUrlEncodedContent(data);
-					var response = await client.PostAsync(post, content);
-
+					var response = await client.PostAsync(post, content); */
+					var response = await client.GetAsync(url);
 					if (response.IsSuccessStatusCode)
 					{
+						/*
 						string res = await response.Content.ReadAsStringAsync();
-						logs($"Inserting {Barcode}, {UnitID}, {Description}, and {Price} is successful.");
+						logs($"Inserting {Barcode}, {UnitID}, {Description}, and {Price} is successful."); 
+						*/
 					}
 					else
 					{
-						logs($"HTTP request failed with status code: {response.StatusCode}");
+						/* 
+						 logs($"HTTP request failed with status code: {response.StatusCode}");
 						logs($"Inserting {Barcode}, {UnitID}, {Description}, and {Price} Failed");
+						*/
 					}
 				}
 			}
@@ -454,23 +439,11 @@ namespace Scale_v2
 		{
 			try
 			{
-				DateTime cdate = DateTime.Today;
-				string exe = this.iniFile.GetSetting("APP", "EXE");
-				string dlpath = this.iniFile.GetSetting("Target", "DLPath");
-				string currentdate = String.Format("{0:MMddyyyy}", cdate);
-				string currenttime = DateTime.Now.ToString("HHmm");
-				string dateStr = "2021-05-13 11:59:00.000";
-				DateTime epochTime = DateTime.Parse("1970-01-01");
-				DateTime date = DateTime.Parse(dateStr);
-				var Epoch = date.Subtract(epochTime).TotalSeconds;
-				string SPath = this.iniFile.GetSetting("Target", "OtherPath");
-				string scalepath = this.iniFile.GetSetting("Settings", "Source");
-				string delType = "*.d";
-				string[] getdeletefile = Directory.GetFiles(scalepath, delType);
+				string[] getdeletefile = Directory.GetFiles(this.sourceDir, "*.d");
 
-				if (File.Exists(scalepath + "bingo"))
+				if (File.Exists(this.sourceDir + "bingo"))
 				{
-					File.Delete(scalepath + "bingo");
+					File.Delete(this.sourceDir + "bingo");
 				}
 
 				foreach (string lDelFile in getdeletefile)
@@ -479,10 +452,10 @@ namespace Scale_v2
 					ProcessStartInfo startInfo = new ProcessStartInfo();
 					startInfo.CreateNoWindow = false;
 					startInfo.UseShellExecute = false;
-					startInfo.FileName = exe;
+					startInfo.FileName = this.aclasApp;
 					startInfo.WindowStyle = ProcessWindowStyle.Hidden;
 
-					startInfo.Arguments = @"-h " + ip + @":5002 -t DEL -b PLU -n " + scalepath + name + " -f Ascii";
+					startInfo.Arguments = @"-h " + ip + @":5002 -t DEL -b PLU -n " + this.sourceDir + name + " -f Ascii";
 					logs(ip + ": delete AclasSDK");
 					using (Process process = Process.Start(startInfo))
 					{
@@ -498,7 +471,7 @@ namespace Scale_v2
 						}
 					}
 
-					string dldest = Path.Combine(dlpath, name);
+					string dldest = Path.Combine(this.downloadDir, name);
 					if (File.Exists(dldest))
 					{
 						File.Delete(dldest);
@@ -512,54 +485,45 @@ namespace Scale_v2
 			}
 		}
 
-		private void MoveFile(string ip)
+		private void clear_Click(object sender, EventArgs e)
 		{
-			logs(ip + ": is moving a file");
-			try
+			//string[] ipAddress = new string[3];
+			DialogResult result = MessageBox.Show("Are you sure you want to proceed?", "Warning!", MessageBoxButtons.YesNo);
+			if (result == DialogResult.Yes)
 			{
-				string filePath = this.iniFile.GetSetting("Settings", "Aclass");
-				DateTime date = DateTime.Today;
-				string current = String.Format("{0:yyyyMMdd}", date);
-				string FileType = "*.txt";
-				string destFileName = this.iniFile.GetSetting("Target", "ExtractPath");
-				string[] GetFile = Directory.GetFiles(filePath, FileType);
-
-				foreach (string localfile in GetFile)
+				for (int i = 1; i <= 3; i++)
 				{
-					string filename = Path.GetFileName(localfile);
-					string FileIdentifier = ip + "_PLU-UP_" + current + ".txt";
-
-					string destpath = Path.Combine(destFileName, Path.GetFileName(localfile));
-					if (File.Exists(destpath))
+					string ip = this.iniFile.GetSetting("Address", "SD" + i.ToString());
+					if ((i == 1) && (ip1.Checked == true))
 					{
-						File.Delete(destpath);
-						logs($"{destpath} successfully deleted!");
+						ClearProcess(ip);
 					}
-					File.Move(localfile, destpath);
-					logs("Successfully Moved!");
+
+					if ((i == 2) && (ip2.Checked == true))
+					{
+						ClearProcess(ip);
+					}
+
+					if ((i == 3) && (ip3.Checked == true))
+					{
+						ClearProcess(ip);
+					}
 				}
 			}
-			catch (Exception err)
-			{
-				logs("An error occured while moving file: " + err.Message);
-			}
+			//ClearProcess(ipAddress);
 		}
-
-		private void ClearProcess(string[] ip)
+		private void ClearProcess(string ip)
 		{
 			string ext = ".d";
 			DateTime date = DateTime.Today;
 			string current = String.Format("{0:yyyyMMdd}", date);
 			string filename = ip + "_PLU-UP_" + current + ".txt";
-			string to = this.iniFile.GetSetting("Settings", "Source"); // destination
-			string from = this.iniFile.GetSetting("Target", "ExtractPath"); // original path
+			string to = this.iniFile.GetSetting("Settings", "Source");
+			string from = this.iniFile.GetSetting("Target", "ExtractPath");
 
 			
 			logs("Downloading...");
-			for (int i = 0; i < ip.Length; i++)
-			{
-				Download(ip[i]);
-			}
+			Download(ip, this.inDir, "txt");
 
 			string[] files = Directory.GetFiles(from, filename);
 
@@ -590,25 +554,22 @@ namespace Scale_v2
 				{
 					logs($"The {newFile} file cannot be found on the directory!");
 				}
-				/*
+
 				if (File.Exists(bingoPath))
 				{
 					logs("Deleting...");
-					for (int i = 0; i < ip.Length; i++)
-					{
-						Delete(ip[i]);
-					}
+					Delete(ip);
 				}
 				else
 				{
 					logs($"Bingo file cannot be found!");
 				}
-				*/
 			}
 		}
 
 		private void copy_Click(object sender, EventArgs e)
 		{
+			string scalePath = this.iniFile.GetSetting("Settings", "Source");
 			// string[] ipAddress = new string[3];
 			DialogBox dialog = new DialogBox();
 			dialog.ShowDialog();
@@ -630,30 +591,46 @@ namespace Scale_v2
 
 			if (radioBtn != "")
 			{
-				string file = "";
+				//string file = "";
 
 				for (int i = 1; i <= 3; i++)
 				{
 					if (radioBtn == this.iniFile.GetSetting("Address", "SD" + i.ToString()))
 					{
+						Download(radioBtn, this.sourceDir, "iu");
+						using (StreamWriter sw = new StreamWriter(this.sourceDir + "bingo"))
+						{
+							sw.WriteLine();
+						}
 						break;
 					}
 				}
-				file = Download(radioBtn);
 
-				if (file.Length > 0)
+				/* if (file.Length > 0)
 				{
 					foreach (string sd in scale)
 					{
-						// MessageBox.Show(sd);
+						//MessageBox.Show(file);
 						Upload(sd, file);
+						if (File.Exists(file))
+						{
+							File.Delete(file);
+						}
+						Download(sd, this.inDir, "txt");
+						using (StreamWriter sw = new StreamWriter(this.sourceDir + "bingo"))
+						{
+							sw.WriteLine();
+						}
+
+						this.HTTP(this.iniFile.GetSetting("Address", "Get")).Wait();
+
+						//UploadToSMS(sd, file);
 						logs($"The data from {radioBtn} are successfully transfered on {sd}.");
 					}
-				}
+				} */
 			}
-
 		}
-		
+
 		public void Upload(string ip, string file)
 		{
 			string exe = this.iniFile.GetSetting("APP", "EXE");
@@ -665,7 +642,7 @@ namespace Scale_v2
 				startInfo.FileName = exe;
 				startInfo.WindowStyle = ProcessWindowStyle.Hidden;
 				startInfo.Arguments = @"-h " + ip + @":5002 -t DOWN -b PLU -n " + file + " -f Ascii";
-				logs($"Uploading data to {ip}... {startInfo.Arguments}");
+				logs($"Uploading data to {ip}...");
 				using (Process process = Process.Start(startInfo))
 				{
 					if (process != null)
@@ -673,33 +650,11 @@ namespace Scale_v2
 						process.WaitForExit();
 					}
 				}
-				UploadToSMS(ip, file).Wait();
-
 			}
 			catch (Exception err)
 			{
 				logs(ip + ": Failed to upload: " + err.Message);
 			}
-		}
-
-		private async Task UploadToSMS(string ip, string file)
-		{
-			using (var reader = new StreamReader(file))
-			{
-				reader.ReadLine();
-				while (!reader.EndOfStream)
-				{
-					string value = reader.ReadLine();
-					string[] spliter = value.Split('\t');
-					string Barcode = spliter[0].ToString();
-					string UnitID = spliter[11].ToString();
-					string Description = spliter[4].ToString();
-					double Price = Convert.ToDouble(spliter[12].ToString()) * 100;
-					// logs(ip + ", " + Barcode + ", " + Description + ", " + Price + ", " + UnitID + ", " + file);
-					await HTTP(ip, Barcode, Description, Price, UnitID);
-				}
-			}
-			logs("Upload of " + ip + " completed.");
 		}
 
 		private void StatusLog(string message)
@@ -788,7 +743,20 @@ namespace Scale_v2
 
 		private void backgroundWorker1_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
 		{
-			
+			if (e.Cancelled == true)
+			{
+				logs("Cancelled!");
+			}
+			else if (e.Error != null)
+			{
+				logs($"Error: {e.Error.Message}");
+			}
+			else
+			{
+				Process.Start("cmd.exe", "/c taskkill /F /IM AclassSDKConsole.exe /t");
+				backgroundWorker1.CancelAsync();
+				logs("Weighing Scale Process Done!");
+			}
 		}
 
 		private void delet_CheckedChanged(object sender, EventArgs e)
@@ -830,40 +798,13 @@ namespace Scale_v2
 		{
 			Properties.Settings.Default.Upload = this.upload.Checked;
 			Properties.Settings.Default.Save();
-		}
-
-		private void Putty()
-		{
-			string putty = this.iniFile.GetSetting("APP", "Putty");
-			string host = "192.168.1.74";
-			string username = "tux";
-			string password = "tux";
-			// string command = @"psql -U tplinux -c \copy (select * from plu where get_bit(pluflags,10)=1) to /home/tplinux/in/plu.iu DELIMITER '|'; \q import/rcs_importer master";
-			string command = @"psql -U tplinux \copy (select * from plu where get_bit(pluflags,10)=1) to /home/tplinux/in/plu.iu DELIMITER '|'; \q import/rcs_importer master";
-			// string args = $"-ssh {username}@{host} -pw {password} {command}";
-			string args = $"{putty} -ssh {username}@{host} -pw {password} -batch \"{command}\"";
-			MessageBox.Show(args);
-
-			ProcessStartInfo startInfo = new ProcessStartInfo();
-			startInfo.FileName = putty;
-			startInfo.Arguments = args;
-			startInfo.UseShellExecute = false;
-			startInfo.RedirectStandardInput = true;
-			startInfo.RedirectStandardOutput = true;
-			startInfo.CreateNoWindow = false;
-			startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-			using (Process process = Process.Start(startInfo))
-			{
-				process.WaitForExit();
-				string output = process.StandardOutput.ReadToEnd();
-				MessageBox.Show($"Output: {output}");
-			}
-		}		
+		}	
 
 		private void Form1_Resize(object sender, EventArgs e)
 		{
-			if (this.WindowState == FormWindowState.Minimized)
+			if (FormWindowState.Minimized == this.WindowState)
 			{
+				Hide();
 				notifyIcon1.Visible = true;
 				this.ShowInTaskbar = false;
 				notifyIcon1.Text = "Weighing Scale - Running";
@@ -872,6 +813,7 @@ namespace Scale_v2
 
 		private void notifyIcon1_MouseDoubleClick(object sender, MouseEventArgs e)
 		{
+			Show();
 			this.WindowState = FormWindowState.Normal;
 			this.ShowInTaskbar = true;
 			notifyIcon1.Visible = false;
@@ -879,11 +821,12 @@ namespace Scale_v2
 
 		private void Form1_Shown(object sender, EventArgs e)
 		{
-			this.WindowState = FormWindowState.Normal;
+			this.WindowState = FormWindowState.Minimized;
 			notifyIcon1.Visible = true;
 			this.ShowInTaskbar = false;
 			notifyIcon1.Text = "Weighing Scale - Running";
 		}
+
 		private void StartTime()
 		{
 			DateTime now = DateTime.Now; 
@@ -909,7 +852,6 @@ namespace Scale_v2
 			}
 		}
 
-		
 		private void Form1_FormClosing(object sender, FormClosingEventArgs e)
 		{
 
@@ -927,9 +869,9 @@ namespace Scale_v2
 
 			logTextBox.AppendText($"The weighing scale closed at {now}.\r\n");
 
-			using (StreamWriter start = new StreamWriter(file, true))
+			using (StreamWriter end = new StreamWriter(file, true))
 			{
-				start.WriteLine($"The weighing scale closed at {now}.");
+				end.WriteLine($"The weighing scale closed at {now}.");
 			}
 		}
 	}
